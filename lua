@@ -1,0 +1,380 @@
+getgenv().RAYFIELD_SECURE = true
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
+
+-- Services
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- Net / Remotes Setup
+local NetModule = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net")
+local Net = require(NetModule)
+local SkillCheckRemote = Net:Event("SkillCheck")
+
+-- ============================================================
+-- STATE VARIABLES
+-- ============================================================
+local InfiniteStaminaEnabled = false
+local EspEnabled = false
+local NoSpreadEnabled = false
+local AntiRagdollEnabled = false
+local AutoSkillCheckEnabled = false
+local AutoHopiumEnabled = false
+
+-- ============================================================
+-- RAYFIELD UI
+-- ============================================================
+local Window = Rayfield:CreateWindow({
+    name = "Dogs Cheat",
+    subtitle = "Small Menu",
+    sidebarLayout = true, 
+})
+
+-- 1. AIM TAB (Your original, untouched)
+local AimTab = Window:CreateTab({
+    name = "Aim",
+    icon = "crosshair",
+})
+
+AimTab:CreateToggle({
+    name = "Dog Aimbot",
+    currentValue = false,
+    flag = "DogAimbot",
+    callback = function(value)
+        print("Dog Aimbot:", value)
+    end,
+})
+
+AimTab:CreateToggle({
+    name = "Visible Check",
+    currentValue = false,
+    flag = "VisibleCheck",
+    callback = function(value)
+        print("Visible Check:", value)
+    end,
+})
+
+-- 2. COMBAT TAB (From source)
+local CombatTab = Window:CreateTab({
+    name = "Combat",
+    icon = "crosshair",
+})
+
+CombatTab:CreateToggle({
+    name = "No Spread",
+    currentValue = false,
+    flag = "NoSpread",
+    callback = function(value)
+        NoSpreadEnabled = value
+    end,
+})
+
+-- 3. PLAYER TAB (From source)
+local PlayerTab = Window:CreateTab({
+    name = "Player",
+    icon = "user",
+})
+
+PlayerTab:CreateToggle({
+    name = "Infinite Stamina",
+    currentValue = false,
+    flag = "InfiniteStamina",
+    callback = function(value)
+        InfiniteStaminaEnabled = value
+        if value then
+            local char = LocalPlayer.Character
+            if char then char:SetAttribute("Epicsauce", Workspace:GetServerTimeNow() + 999999) end
+        elseif LocalPlayer.Character then
+            LocalPlayer.Character:SetAttribute("Epicsauce", nil)
+        end
+    end,
+})
+
+PlayerTab:CreateToggle({
+    name = "Anti-Ragdoll",
+    currentValue = false,
+    flag = "AntiRagdoll",
+    callback = function(value)
+        AntiRagdollEnabled = value
+        if value then
+            applyAntiRagdoll(LocalPlayer.Character)
+        end
+    end,
+})
+
+PlayerTab:CreateToggle({
+    name = "Auto Skill Check",
+    currentValue = false,
+    flag = "AutoSkill",
+    callback = function(value)
+        AutoSkillCheckEnabled = value
+    end,
+})
+
+PlayerTab:CreateToggle({
+    name = "Auto Hopium (Hold RMB)",
+    currentValue = false,
+    flag = "AutoHopium",
+    callback = function(value)
+        AutoHopiumEnabled = value
+    end,
+})
+
+-- 4. VISUALS TAB (From source)
+local VisualsTab = Window:CreateTab({
+    name = "Visuals",
+    icon = "eye",
+})
+
+VisualsTab:CreateToggle({
+    name = "Radar ESP",
+    currentValue = false,
+    flag = "RadarESP",
+    callback = function(value)
+        EspEnabled = value
+        if not value then clearESP() end
+    end,
+})
+
+-- ============================================================
+-- LOGIC: NO SPREAD
+-- ============================================================
+task.spawn(function()
+    while true do
+        local character = LocalPlayer.Character
+        if character and NoSpreadEnabled then
+            local tool = character:FindFirstChildOfClass("Tool")
+            if tool then
+                tool:SetAttribute("Spread", 0)
+            end
+        end
+        task.wait(0.05)
+    end
+end)
+
+-- ============================================================
+-- LOGIC: AUTO SKILL CHECK
+-- ============================================================
+RunService.RenderStepped:Connect(function()
+    if not AutoSkillCheckEnabled then return end
+    local char = LocalPlayer.Character
+    if not char or char:GetAttribute("Dragged") ~= true then return end
+
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not playerGui then return end
+
+    local skillGui = playerGui:FindFirstChild("SkillCheck")
+    if skillGui and skillGui.Enabled then
+        local track = skillGui:FindFirstChild("Track", true)
+        local zone = track and track:FindFirstChild("Zone", true)
+        local pointer = track and track:FindFirstChild("Pointer", true)
+
+        if zone and pointer then
+            local pX = pointer.Position.X.Scale
+            local zX = zone.Position.X.Scale
+            local zWidth = zone.Size.X.Scale
+            if pX >= zX and pX <= (zX + zWidth) then
+                SkillCheckRemote:FireServer()
+                task.wait(0.2)
+            end
+        end
+    end
+end)
+
+-- ============================================================
+-- LOGIC: AUTO HOPIUM
+-- ============================================================
+task.spawn(function()
+    while true do
+        local shouldFire = false
+        if AutoHopiumEnabled then
+            shouldFire = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+        end
+
+        if shouldFire then
+            local char = LocalPlayer.Character
+            if char then
+                for _, child in ipairs(char:GetChildren()) do
+                    if child:IsA("Tool") and child.Name:lower():gsub("%s+", "") == "hopium" then
+                        for _ = 1, 5 do
+                            pcall(function() child:Activate() end)
+                        end
+                    end
+                end
+            end
+            RunService.Heartbeat:Wait()
+        else
+            task.wait(0.05)
+        end
+    end
+end)
+
+-- ============================================================
+-- LOGIC: INFINITE STAMINA
+-- ============================================================
+task.spawn(function()
+    while true do
+        if InfiniteStaminaEnabled then
+            local char = LocalPlayer.Character
+            if char then
+                char:SetAttribute("Epicsauce", Workspace:GetServerTimeNow() + 999999)
+            end
+        end
+
+        for _, effect in ipairs(Lighting:GetChildren()) do
+            if effect:IsA("ColorCorrectionEffect") then
+                effect.Enabled = false
+            end
+        end
+        local heartbeatSound = game:GetService("SoundService"):FindFirstChild("Heartbeat")
+        if heartbeatSound then heartbeatSound:Destroy() end
+
+        task.wait(0.1)
+    end
+end)
+
+-- ============================================================
+-- LOGIC: ANTI-RAGDOLL
+-- ============================================================
+local function fixJointsAndState(character)
+    if not character then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    humanoid.PlatformStand = false
+    humanoid.AutoRotate = true
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, true)
+    humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+
+    if humanoid.UseJumpPower then
+        humanoid.JumpPower = 50
+    else
+        humanoid.JumpHeight = 7.2
+    end
+
+    for _, desc in ipairs(character:GetDescendants()) do
+        if desc:IsA("BallSocketConstraint") or desc:IsA("HingeConstraint") or desc:IsA("RopeConstraint") or desc:IsA("NoCollisionConstraint") then
+            desc:Destroy()
+        elseif desc:IsA("Motor6D") then
+            desc.Enabled = true
+        end
+    end
+
+    local animateScript = character:FindFirstChild("Animate")
+    if animateScript then
+        if animateScript.Disabled then
+            animateScript.Disabled = false
+        else
+            animateScript.Disabled = true
+            task.wait()
+            animateScript.Disabled = false
+        end
+    end
+end
+
+function applyAntiRagdoll(character)
+    if not character then return end
+    character:SetAttribute("Ragdolled", false)
+    character:SetAttribute("Shocked", nil)
+    fixJointsAndState(character)
+
+    character:GetAttributeChangedSignal("Ragdolled"):Connect(function()
+        if AntiRagdollEnabled then
+            task.wait()
+            character:SetAttribute("Ragdolled", false)
+            fixJointsAndState(character)
+        end
+    end)
+    character:GetAttributeChangedSignal("Shocked"):Connect(function()
+        if AntiRagdollEnabled then
+            character:SetAttribute("Shocked", nil)
+        end
+    end)
+end
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    if InfiniteStaminaEnabled then
+        task.wait(0.5)
+        char:SetAttribute("Epicsauce", Workspace:GetServerTimeNow() + 999999)
+    end
+    if AntiRagdollEnabled then
+        task.wait(0.5)
+        applyAntiRagdoll(char)
+    end
+end)
+
+-- ============================================================
+-- LOGIC: RADAR ESP
+-- ============================================================
+local ActiveMarks = {}
+local FoldersToScan = {
+    { Name = "Characters", Color = Color3.fromRGB(70, 140, 255), PlayersOnly = true },
+    { Name = "NPCs", Color = Color3.fromRGB(255, 55, 55), Named = { Cremator = Color3.fromRGB(0, 0, 0) } }
+}
+
+function clearESP()
+    for model, highlight in pairs(ActiveMarks) do
+        if highlight and highlight.Parent then highlight:Destroy() end
+    end
+    table.clear(ActiveMarks)
+end
+
+local function updateESP()
+    if not EspEnabled then return end
+    local LocalChar = LocalPlayer.Character
+    local CurrentTargets = {}
+
+    for _, folderData in ipairs(FoldersToScan) do
+        local folder = Workspace:FindFirstChild(folderData.Name)
+        if folder then
+            for _, model in ipairs(folder:GetChildren()) do
+                local humanoid = model:IsA("Model") and model:FindFirstChildOfClass("Humanoid")
+                if humanoid and humanoid.Health > 0 and model ~= LocalChar then
+                    local isPlayer = Players:GetPlayerFromCharacter(model)
+                    if not folderData.PlayersOnly or isPlayer then
+                        CurrentTargets[model] = true
+                        local highlight = ActiveMarks[model]
+                        if not highlight or not highlight.Parent then
+                            highlight = Instance.new("Highlight")
+                            highlight.Name = "RadarMark"
+                            highlight.FillTransparency = 0.5
+                            highlight.OutlineTransparency = 1
+                            highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                            highlight.Adornee = model
+                            highlight.Parent = model
+                            ActiveMarks[model] = highlight
+                        end
+                        local customColor = folderData.Named and folderData.Named[model.Name]
+                        highlight.FillColor = customColor or folderData.Color
+                    end
+                end
+            end
+        end
+    end
+
+    for model, highlight in pairs(ActiveMarks) do
+        if not CurrentTargets[model] then
+            if highlight then highlight:Destroy() end
+            ActiveMarks[model] = nil
+        end
+    end
+end
+
+task.spawn(function()
+    while true do
+        if EspEnabled then pcall(updateESP) end
+        task.wait(0.4)
+    end
+end)
+
+Rayfield:Notify({
+    Title = "Dogs Cheat",
+    Content = "Features loaded successfully.",
+    Duration = 4,
+})
