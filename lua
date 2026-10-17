@@ -38,9 +38,9 @@ local AimbotVisibleCheck = false
 local AimbotFOV = 150
 local AimbotSmoothness = 5
 
--- Shared Radar/Aimbot Folders Logic (Only tracks Dogs/NPCs)
+-- Shared Radar/Aimbot Folders Logic
 local FoldersToScan = {
-    { Name = "NPCs", PlayersOnly = false }
+    { Name = "NPCs", PlayersOnly = false }       -- Tracks Dogs
 }
 
 -- ============================================================
@@ -241,7 +241,6 @@ task.spawn(function()
         if InfiniteAmmoEnabled then
             local character = LocalPlayer.Character
             if character then
-                -- Force attributes on Character
                 character:SetAttribute("Ammo", 999)
                 character:SetAttribute("Clip", 999)
                 character:SetAttribute("Reserve", 999)
@@ -249,13 +248,11 @@ task.spawn(function()
 
                 local tool = character:FindFirstChildOfClass("Tool")
                 if tool then
-                    -- Force attributes on Tool
                     tool:SetAttribute("Ammo", 999)
                     tool:SetAttribute("Clip", 999)
                     tool:SetAttribute("Reserve", 999)
                     tool:SetAttribute("CurrentAmmo", 999)
                     
-                    -- Fallback for IntValues
                     for _, child in ipairs(tool:GetDescendants()) do
                         if child:IsA("IntValue") and (string.find(child.Name:lower(), "ammo") or string.find(child.Name:lower(), "clip")) then
                             child.Value = 999
@@ -312,7 +309,7 @@ local function updateBonBonESP()
                     if not data or not data.highlight or not data.highlight.Parent then
                         local highlight = Instance.new("Highlight")
                         highlight.Name = "BonBonMark"
-                        highlight.FillColor = Color3.fromRGB(255, 100, 0) -- Halloween Orange
+                        highlight.FillColor = Color3.fromRGB(255, 100, 0)
                         highlight.OutlineColor = Color3.fromRGB(0, 0, 0)
                         highlight.FillTransparency = 0.2
                         highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
@@ -336,7 +333,6 @@ local function updateBonBonESP()
         end
     end
 
-    -- Cleanup
     for obj, data in pairs(BonBonMarks) do
         if not CurrentTargets[obj] then
             if data.highlight then data.highlight:Destroy() end
@@ -346,7 +342,6 @@ local function updateBonBonESP()
     end
 end
 
--- Update Bon Bon Text Positions
 RunService.RenderStepped:Connect(function()
     if not BonBonESPEnabled then return end
     for obj, data in pairs(BonBonMarks) do
@@ -520,12 +515,12 @@ local function getClosestTarget()
                                     if AimbotVisibleCheck then
                                         local rayParams = RaycastParams.new()
                                         rayParams.FilterType = Enum.RaycastFilterType.Exclude
-                                        rayParams.FilterDescendantsInstances = { LocalChar }
+                                        rayParams.FilterDescendantsInstances = { LocalChar, folder }
                                         local rayOrigin = Camera.CFrame.Position
                                         local rayDir = targetPart.Position - rayOrigin
                                         local rayResult = Workspace:Raycast(rayOrigin, rayDir, rayParams)
                                         
-                                        if not rayResult or rayResult.Instance:IsDescendantOf(model) then
+                                        if not rayResult then
                                             shortestDist = dist
                                             closestPart = targetPart
                                         end
@@ -559,7 +554,6 @@ RunService.RenderStepped:Connect(function()
 
     local targetPart = getClosestTarget()
     if targetPart then
-        -- FIXED: Added the colon here so the loop doesn't crash
         local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
         if onScreen then
             local center = Camera.ViewportSize / 2
@@ -740,7 +734,7 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 end)
 
 -- ============================================================
--- LOGIC: RADAR ESP
+-- LOGIC: RADAR ESP (With Health Bars)
 -- ============================================================
 local ActiveMarks = {}
 local ESPColors = {
@@ -749,8 +743,10 @@ local ESPColors = {
 }
 
 function clearESP()
-    for model, highlight in pairs(ActiveMarks) do
-        if highlight and highlight.Parent then highlight:Destroy() end
+    for model, data in pairs(ActiveMarks) do
+        if data.highlight and data.highlight.Parent then data.highlight:Destroy() end
+        if data.healthBar then data.healthBar:Remove() end
+        if data.hpText then data.hpText:Remove() end
     end
     table.clear(ActiveMarks)
 end
@@ -769,32 +765,89 @@ local function updateESP()
                     local isPlayer = Players:GetPlayerFromCharacter(model)
                     if not folderData.PlayersOnly or isPlayer then
                         CurrentTargets[model] = true
-                        local highlight = ActiveMarks[model]
-                        if not highlight or not highlight.Parent then
-                            highlight = Instance.new("Highlight")
+                        local data = ActiveMarks[model]
+                        
+                        if not data or not data.highlight or not data.highlight.Parent then
+                            local highlight = Instance.new("Highlight")
                             highlight.Name = "RadarMark"
                             highlight.FillTransparency = 0.5
                             highlight.OutlineTransparency = 1
                             highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                             highlight.Adornee = model
                             highlight.Parent = model
-                            ActiveMarks[model] = highlight
+                            
+                            local healthBar = Drawing.new("Line")
+                            healthBar.Thickness = 2
+                            healthBar.Transparency = 1
+                            healthBar.Visible = false
+                            
+                            local hpText = Drawing.new("Text")
+                            hpText.Size = 14
+                            hpText.Center = true
+                            hpText.Outline = true
+                            hpText.OutlineColor = Color3.fromRGB(0, 0, 0)
+                            hpText.Font = 2
+                            hpText.Visible = false
+                            
+                            ActiveMarks[model] = { highlight = highlight, healthBar = healthBar, hpText = hpText }
+                            data = ActiveMarks[model]
                         end
+                        
                         local customColor = folderData.Named and folderData.Named[model.Name]
-                        highlight.FillColor = customColor or folderData.Color
+                        data.highlight.FillColor = customColor or folderData.Color
                     end
                 end
             end
         end
     end
 
-    for model, highlight in pairs(ActiveMarks) do
+    for model, data in pairs(ActiveMarks) do
         if not CurrentTargets[model] then
-            if highlight then highlight:Destroy() end
+            if data.highlight then data.highlight:Destroy() end
+            if data.healthBar then data.healthBar:Remove() end
+            if data.hpText then data.hpText:Remove() end
             ActiveMarks[model] = nil
         end
     end
 end
+
+RunService.RenderStepped:Connect(function()
+    if not EspEnabled then return end
+    for model, data in pairs(ActiveMarks) do
+        local humanoid = model:FindFirstChildOfClass("Humanoid")
+        local head = model:FindFirstChild("Head") or model:FindFirstChild("Torso") or model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+        
+        if humanoid and humanoid.Health > 0 and head then
+            local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 1.5, 0))
+            if onScreen then
+                local hpPercent = humanoid.Health / humanoid.MaxHealth
+                
+                -- Gradient: Green (Full) to Red (Low)
+                local color = Color3.fromRGB(255 - (255 * hpPercent), 255 * hpPercent, 0)
+                
+                local barHeight = 30
+                local barX = screenPos.X - 30
+                local barY = screenPos.Y - barHeight
+                
+                data.healthBar.From = Vector2.new(barX, barY)
+                data.healthBar.To = Vector2.new(barX, barY + barHeight)
+                data.healthBar.Color = color
+                data.healthBar.Visible = true
+                
+                data.hpText.Position = Vector2.new(barX - 12, barY + (barHeight / 2) - 7)
+                data.hpText.Text = tostring(math.floor(humanoid.Health))
+                data.hpText.Color = color
+                data.hpText.Visible = true
+            else
+                data.healthBar.Visible = false
+                data.hpText.Visible = false
+            end
+        else
+            data.healthBar.Visible = false
+            data.hpText.Visible = false
+        end
+    end
+end)
 
 task.spawn(function()
     while true do
