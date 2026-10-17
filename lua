@@ -8,6 +8,7 @@ local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Camera = Workspace.CurrentCamera
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -25,6 +26,21 @@ local NoSpreadEnabled = false
 local AntiRagdollEnabled = false
 local AutoSkillCheckEnabled = false
 local AutoHopiumEnabled = false
+
+-- ESP Variables
+local AmmoBagESPEnabled = false
+
+-- Aimbot Variables
+local AimbotEnabled = false
+local AimbotVisibleCheck = false
+local AimbotFOV = 150
+local AimbotSmoothness = 5
+
+-- Shared Radar/Aimbot Folders Logic
+local FoldersToScan = {
+    { Name = "Characters", PlayersOnly = true }, -- Tracks Players
+    { Name = "NPCs", PlayersOnly = false }       -- Tracks Dogs
+}
 
 -- ============================================================
 -- RAYFIELD UI
@@ -46,7 +62,7 @@ AimTab:CreateToggle({
     currentValue = false,
     flag = "DogAimbot",
     callback = function(value)
-        print("Dog Aimbot:", value)
+        AimbotEnabled = value
     end,
 })
 
@@ -55,7 +71,31 @@ AimTab:CreateToggle({
     currentValue = false,
     flag = "VisibleCheck",
     callback = function(value)
-        print("Visible Check:", value)
+        AimbotVisibleCheck = value
+    end,
+})
+
+AimTab:CreateSlider({
+    name = "FOV Size",
+    range = {30, 800},
+    increment = 10,
+    suffix = "px",
+    currentValue = 150,
+    flag = "AimbotFOV",
+    callback = function(value)
+        AimbotFOV = value
+    end,
+})
+
+AimTab:CreateSlider({
+    name = "Smoothness",
+    range = {1, 20},
+    increment = 1,
+    suffix = "x",
+    currentValue = 5,
+    flag = "AimbotSmoothness",
+    callback = function(value)
+        AimbotSmoothness = value
     end,
 })
 
@@ -140,6 +180,167 @@ VisualsTab:CreateToggle({
         if not value then clearESP() end
     end,
 })
+
+VisualsTab:CreateToggle({
+    name = "Ammo Bag ESP",
+    currentValue = false,
+    flag = "AmmoBagESP",
+    callback = function(value)
+        AmmoBagESPEnabled = value
+        if not value then clearAmmoESP() end
+    end,
+})
+
+-- ============================================================
+-- LOGIC: AMMO BAG ESP
+-- ============================================================
+local AmmoMarks = {}
+
+function clearAmmoESP()
+    for part, highlight in pairs(AmmoMarks) do
+        if highlight and highlight.Parent then highlight:Destroy() end
+    end
+    table.clear(AmmoMarks)
+end
+
+local function updateAmmoESP()
+    if not AmmoBagESPEnabled then return end
+    local CurrentTargets = {}
+
+    -- Scan workspace for anything named Ammo or Bag
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") or obj:IsA("Model") then
+            local name = obj.Name:lower()
+            if string.find(name, "ammo") or string.find(name, "bag") or string.find(name, "resupply") then
+                -- Ignore parts inside players or dogs
+                local parentModel = obj:FindFirstAncestorOfClass("Model")
+                if not (parentModel and parentModel:FindFirstChildOfClass("Humanoid")) then
+                    CurrentTargets[obj] = true
+                    local highlight = AmmoMarks[obj]
+                    if not highlight or not highlight.Parent then
+                        highlight = Instance.new("Highlight")
+                        highlight.Name = "AmmoMark"
+                        highlight.FillColor = Color3.fromRGB(255, 170, 0) -- Orange
+                        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                        highlight.FillTransparency = 0.3
+                        highlight.OutlineTransparency = 0
+                        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                        highlight.Adornee = obj
+                        highlight.Parent = obj
+                        AmmoMarks[obj] = highlight
+                    end
+                end
+            end
+        end
+    end
+
+    -- Cleanup
+    for obj, highlight in pairs(AmmoMarks) do
+        if not CurrentTargets[obj] then
+            if highlight then highlight:Destroy() end
+            AmmoMarks[obj] = nil
+        end
+    end
+end
+
+task.spawn(function()
+    while true do
+        if AmmoBagESPEnabled then pcall(updateAmmoESP) end
+        task.wait(0.5)
+    end
+end)
+
+-- ============================================================
+-- AIMBOT LOGIC & FOV CIRCLE
+-- ============================================================
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Thickness = 1
+FOVCircle.Color = Color3.fromRGB(255, 255, 255)
+FOVCircle.Filled = false
+FOVCircle.Transparency = 0.5
+FOVCircle.Visible = false
+
+local function getTargetPart(model)
+    return model:FindFirstChild("Head")
+        or model:FindFirstChild("Torso")
+        or model:FindFirstChild("UpperTorso")
+        or model:FindFirstChild("HumanoidRootPart")
+        or model.PrimaryPart
+end
+
+local function getClosestTarget()
+    local closestPart = nil
+    local shortestDist = AimbotFOV
+    local center = Camera.ViewportSize / 2
+    local LocalChar = LocalPlayer.Character
+
+    for _, folderData in ipairs(FoldersToScan) do
+        local folder = Workspace:FindFirstChild(folderData.Name)
+        if folder then
+            for _, model in ipairs(folder:GetChildren()) do
+                local humanoid = model:IsA("Model") and model:FindFirstChildOfClass("Humanoid")
+                if humanoid and humanoid.Health > 0 and model ~= LocalChar then
+                    local isPlayer = Players:GetPlayerFromCharacter(model)
+                    
+                    if not folderData.PlayersOnly or isPlayer then
+                        local targetPart = getTargetPart(model)
+                        if targetPart then
+                            local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+                            if onScreen then
+                                local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+                                if dist < shortestDist then
+                                    if AimbotVisibleCheck then
+                                        local rayParams = RaycastParams.new()
+                                        rayParams.FilterType = Enum.RaycastFilterType.Exclude
+                                        rayParams.FilterDescendantsInstances = { LocalChar }
+                                        local rayOrigin = Camera.CFrame.Position
+                                        local rayDir = targetPart.Position - rayOrigin
+                                        local rayResult = Workspace:Raycast(rayOrigin, rayDir, rayParams)
+                                        
+                                        if not rayResult or rayResult.Instance:IsDescendantOf(model) then
+                                            shortestDist = dist
+                                            closestPart = targetPart
+                                        end
+                                    else
+                                        shortestDist = dist
+                                        closestPart = targetPart
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return closestPart
+end
+
+RunService.RenderStepped:Connect(function()
+    if AimbotEnabled then
+        FOVCircle.Visible = true
+        FOVCircle.Position = Camera.ViewportSize / 2
+        FOVCircle.Radius = AimbotFOV
+    else
+        FOVCircle.Visible = false
+    end
+
+    if not AimbotEnabled then return end
+    if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
+    if UserInputService.MouseBehavior == Enum.MouseBehavior.Default then return end
+
+    local targetPart = getClosestTarget()
+    if targetPart then
+        local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+        if onScreen then
+            local center = Camera.ViewportSize / 2
+            local deltaX = screenPos.X - center.X
+            local deltaY = screenPos.Y - center.Y
+            local factor = 1 / AimbotSmoothness
+            mousemoverel(deltaX * factor, deltaY * factor)
+        end
+    end
+end)
 
 -- ============================================================
 -- LOGIC: NO SPREAD
@@ -313,7 +514,7 @@ end)
 -- LOGIC: RADAR ESP
 -- ============================================================
 local ActiveMarks = {}
-local FoldersToScan = {
+local ESPColors = {
     { Name = "Characters", Color = Color3.fromRGB(70, 140, 255), PlayersOnly = true },
     { Name = "NPCs", Color = Color3.fromRGB(255, 55, 55), Named = { Cremator = Color3.fromRGB(0, 0, 0) } }
 }
@@ -330,7 +531,7 @@ local function updateESP()
     local LocalChar = LocalPlayer.Character
     local CurrentTargets = {}
 
-    for _, folderData in ipairs(FoldersToScan) do
+    for _, folderData in ipairs(ESPColors) do
         local folder = Workspace:FindFirstChild(folderData.Name)
         if folder then
             for _, model in ipairs(folder:GetChildren()) do
