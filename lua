@@ -27,7 +27,8 @@ local AntiRagdollEnabled = false
 local AutoSkillCheckEnabled = false
 local AutoHopiumEnabled = false
 
--- ESP Variables
+-- New Features
+local InfiniteAmmoEnabled = false
 local AmmoBagESPEnabled = false
 
 -- Aimbot Variables
@@ -113,6 +114,15 @@ CombatTab:CreateToggle({
     end,
 })
 
+CombatTab:CreateToggle({
+    name = "Infinite Ammo",
+    currentValue = false,
+    flag = "InfiniteAmmo",
+    callback = function(value)
+        InfiniteAmmoEnabled = value
+    end,
+})
+
 -- 3. PLAYER TAB
 local PlayerTab = Window:CreateTab({
     name = "Player",
@@ -191,13 +201,43 @@ VisualsTab:CreateToggle({
 })
 
 -- ============================================================
--- LOGIC: AMMO BAG ESP
+-- LOGIC: INFINITE AMMO
+-- ============================================================
+task.spawn(function()
+    while true do
+        if InfiniteAmmoEnabled then
+            local character = LocalPlayer.Character
+            if character then
+                local tool = character:FindFirstChildOfClass("Tool")
+                if tool then
+                    -- Try setting common ammo attributes
+                    tool:SetAttribute("Ammo", 999)
+                    tool:SetAttribute("Clip", 999)
+                    tool:SetAttribute("Reserve", 999)
+                    tool:SetAttribute("CurrentAmmo", 999)
+                    
+                    -- Try finding ammo IntValues inside the tool
+                    for _, child in ipairs(tool:GetDescendants()) do
+                        if child:IsA("IntValue") and string.find(child.Name:lower(), "ammo") then
+                            child.Value = 999
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(0.1)
+    end
+end)
+
+-- ============================================================
+-- LOGIC: AMMO BAG ESP (Highlight + Text)
 -- ============================================================
 local AmmoMarks = {}
 
 function clearAmmoESP()
-    for part, highlight in pairs(AmmoMarks) do
-        if highlight and highlight.Parent then highlight:Destroy() end
+    for part, data in pairs(AmmoMarks) do
+        if data.highlight and data.highlight.Parent then data.highlight:Destroy() end
+        if data.text then data.text:Remove() end
     end
     table.clear(AmmoMarks)
 end
@@ -215,9 +255,10 @@ local function updateAmmoESP()
                 local parentModel = obj:FindFirstAncestorOfClass("Model")
                 if not (parentModel and parentModel:FindFirstChildOfClass("Humanoid")) then
                     CurrentTargets[obj] = true
-                    local highlight = AmmoMarks[obj]
-                    if not highlight or not highlight.Parent then
-                        highlight = Instance.new("Highlight")
+                    
+                    local data = AmmoMarks[obj]
+                    if not data or not data.highlight or not data.highlight.Parent then
+                        local highlight = Instance.new("Highlight")
                         highlight.Name = "AmmoMark"
                         highlight.FillColor = Color3.fromRGB(255, 170, 0) -- Orange
                         highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
@@ -226,7 +267,18 @@ local function updateAmmoESP()
                         highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                         highlight.Adornee = obj
                         highlight.Parent = obj
-                        AmmoMarks[obj] = highlight
+                        
+                        local text = Drawing.new("Text")
+                        text.Text = "Ammo Bag"
+                        text.Color = Color3.fromRGB(255, 255, 255)
+                        text.Size = 16
+                        text.Center = true
+                        text.Outline = true
+                        text.OutlineColor = Color3.fromRGB(0, 0, 0)
+                        text.Font = 2 -- Arial / SourceSans (Montserrat isn't natively supported)
+                        text.Visible = false
+                        
+                        AmmoMarks[obj] = { highlight = highlight, text = text }
                     end
                 end
             end
@@ -234,9 +286,10 @@ local function updateAmmoESP()
     end
 
     -- Cleanup
-    for obj, highlight in pairs(AmmoMarks) do
+    for obj, data in pairs(AmmoMarks) do
         if not CurrentTargets[obj] then
-            if highlight then highlight:Destroy() end
+            if data.highlight then data.highlight:Destroy() end
+            if data.text then data.text:Remove() end
             AmmoMarks[obj] = nil
         end
     end
@@ -246,6 +299,34 @@ task.spawn(function()
     while true do
         if AmmoBagESPEnabled then pcall(updateAmmoESP) end
         task.wait(0.5)
+    end
+end)
+
+-- Update Ammo Bag Text Positions on Screen
+RunService.RenderStepped:Connect(function()
+    if not AmmoBagESPEnabled then return end
+    for obj, data in pairs(AmmoMarks) do
+        if data.text and data.highlight and data.highlight.Parent then
+            local pos
+            if obj:IsA("BasePart") then
+                pos = obj.Position
+            elseif obj:IsA("Model") then
+                local primary = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                if primary then pos = primary.Position end
+            end
+            
+            if pos then
+                local screenPos, onScreen = Camera:WorldToViewportPoint(pos)
+                if onScreen then
+                    data.text.Position = Vector2.new(screenPos.X, screenPos.Y - 25)
+                    data.text.Visible = true
+                else
+                    data.text.Visible = false
+                end
+            else
+                data.text.Visible = false
+            end
+        end
     end
 end)
 
