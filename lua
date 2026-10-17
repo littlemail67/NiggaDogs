@@ -38,9 +38,9 @@ local AimbotVisibleCheck = false
 local AimbotFOV = 150
 local AimbotSmoothness = 5
 
--- Shared Radar/Aimbot Folders Logic
+-- Shared Radar/Aimbot Folders Logic (Only tracks Dogs/NPCs)
 local FoldersToScan = {
-    { Name = "NPCs", PlayersOnly = false }       -- Tracks Dogs
+    { Name = "NPCs", PlayersOnly = false }
 }
 
 -- ============================================================
@@ -241,7 +241,7 @@ task.spawn(function()
         if InfiniteAmmoEnabled then
             local character = LocalPlayer.Character
             if character then
-                -- Force attributes on Character (server might read these)
+                -- Force attributes on Character
                 character:SetAttribute("Ammo", 999)
                 character:SetAttribute("Clip", 999)
                 character:SetAttribute("Reserve", 999)
@@ -286,7 +286,6 @@ function getBonBon()
         if obj:IsA("BasePart") or obj:IsA("Model") then
             local name = obj.Name:lower():gsub("%s+", "")
             if string.find(name, "bonbon") or string.find(name, "bon") then
-                -- Ignore player characters
                 local parentModel = obj:FindFirstAncestorOfClass("Model")
                 if not (parentModel and parentModel:FindFirstChildOfClass("Humanoid")) then
                     return obj
@@ -560,7 +559,8 @@ RunService.RenderStepped:Connect(function()
 
     local targetPart = getClosestTarget()
     if targetPart then
-        local screenPos, onScreen = Camera.WorldToViewportPoint(targetPart.Position)
+        -- FIXED: Added the colon here so the loop doesn't crash
+        local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
         if onScreen then
             local center = Camera.ViewportSize / 2
             local deltaX = screenPos.X - center.X
