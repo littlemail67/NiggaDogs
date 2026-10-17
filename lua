@@ -38,7 +38,6 @@ local AimbotSmoothness = 5
 
 -- Shared Radar/Aimbot Folders Logic
 local FoldersToScan = {
-    { Name = "Characters", PlayersOnly = true }, -- Tracks Players
     { Name = "NPCs", PlayersOnly = false }       -- Tracks Dogs
 }
 
