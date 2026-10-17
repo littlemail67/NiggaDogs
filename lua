@@ -30,6 +30,7 @@ local AutoHopiumEnabled = false
 -- New Features
 local InfiniteAmmoEnabled = false
 local AmmoBagESPEnabled = false
+local BonBonESPEnabled = false
 
 -- Aimbot Variables
 local AimbotEnabled = false
@@ -200,25 +201,63 @@ VisualsTab:CreateToggle({
     end,
 })
 
+VisualsTab:CreateSection("Halloween Event")
+VisualsTab:CreateToggle({
+    name = "🎃 Bon Bon ESP",
+    currentValue = false,
+    flag = "BonBonESP",
+    callback = function(value)
+        BonBonESPEnabled = value
+        if not value then clearBonBonESP() end
+    end,
+})
+
+VisualsTab:CreateButton({
+    name = "Teleport to Bon Bon",
+    callback = function()
+        local bonBon = getBonBon()
+        local char = LocalPlayer.Character
+        if bonBon and char and char:FindFirstChild("HumanoidRootPart") then
+            local pos
+            if bonBon:IsA("BasePart") then
+                pos = bonBon.Position
+            else
+                local primary = bonBon.PrimaryPart or bonBon:FindFirstChild("HumanoidRootPart") or bonBon:FindFirstChildWhichIsA("BasePart")
+                if primary then pos = primary.Position end
+            end
+            
+            if pos then
+                char.HumanoidRootPart.CFrame = CFrame.new(pos + Vector3.new(0, 5, 0))
+            end
+        end
+    end,
+})
+
 -- ============================================================
--- LOGIC: INFINITE AMMO
+-- LOGIC: INFINITE AMMO (Attribute Replication)
 -- ============================================================
 task.spawn(function()
     while true do
         if InfiniteAmmoEnabled then
             local character = LocalPlayer.Character
             if character then
+                -- Force attributes on Character (server might read these)
+                character:SetAttribute("Ammo", 999)
+                character:SetAttribute("Clip", 999)
+                character:SetAttribute("Reserve", 999)
+                character:SetAttribute("CurrentAmmo", 999)
+
                 local tool = character:FindFirstChildOfClass("Tool")
                 if tool then
-                    -- Try setting common ammo attributes
+                    -- Force attributes on Tool
                     tool:SetAttribute("Ammo", 999)
                     tool:SetAttribute("Clip", 999)
                     tool:SetAttribute("Reserve", 999)
                     tool:SetAttribute("CurrentAmmo", 999)
                     
-                    -- Try finding ammo IntValues inside the tool
+                    -- Fallback for IntValues
                     for _, child in ipairs(tool:GetDescendants()) do
-                        if child:IsA("IntValue") and string.find(child.Name:lower(), "ammo") then
+                        if child:IsA("IntValue") and (string.find(child.Name:lower(), "ammo") or string.find(child.Name:lower(), "clip")) then
                             child.Value = 999
                         end
                     end
@@ -230,7 +269,121 @@ task.spawn(function()
 end)
 
 -- ============================================================
--- LOGIC: AMMO BAG ESP (Highlight + Text)
+-- LOGIC: BON BON ESP & FINDER
+-- ============================================================
+local BonBonMarks = {}
+
+function clearBonBonESP()
+    for obj, data in pairs(BonBonMarks) do
+        if data.highlight and data.highlight.Parent then data.highlight:Destroy() end
+        if data.text then data.text:Remove() end
+    end
+    table.clear(BonBonMarks)
+end
+
+function getBonBon()
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") or obj:IsA("Model") then
+            local name = obj.Name:lower():gsub("%s+", "")
+            if string.find(name, "bonbon") or string.find(name, "bon") then
+                -- Ignore player characters
+                local parentModel = obj:FindFirstAncestorOfClass("Model")
+                if not (parentModel and parentModel:FindFirstChildOfClass("Humanoid")) then
+                    return obj
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function updateBonBonESP()
+    if not BonBonESPEnabled then return end
+    local CurrentTargets = {}
+
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") or obj:IsA("Model") then
+            local name = obj.Name:lower():gsub("%s+", "")
+            if string.find(name, "bonbon") or string.find(name, "bon") then
+                local parentModel = obj:FindFirstAncestorOfClass("Model")
+                if not (parentModel and parentModel:FindFirstChildOfClass("Humanoid")) then
+                    CurrentTargets[obj] = true
+                    
+                    local data = BonBonMarks[obj]
+                    if not data or not data.highlight or not data.highlight.Parent then
+                        local highlight = Instance.new("Highlight")
+                        highlight.Name = "BonBonMark"
+                        highlight.FillColor = Color3.fromRGB(255, 100, 0) -- Halloween Orange
+                        highlight.OutlineColor = Color3.fromRGB(0, 0, 0)
+                        highlight.FillTransparency = 0.2
+                        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                        highlight.Adornee = obj
+                        highlight.Parent = obj
+                        
+                        local text = Drawing.new("Text")
+                        text.Text = "Bon Bon"
+                        text.Color = Color3.fromRGB(255, 100, 0)
+                        text.Size = 16
+                        text.Center = true
+                        text.Outline = true
+                        text.OutlineColor = Color3.fromRGB(0, 0, 0)
+                        text.Font = 2
+                        text.Visible = false
+                        
+                        BonBonMarks[obj] = { highlight = highlight, text = text }
+                    end
+                end
+            end
+        end
+    end
+
+    -- Cleanup
+    for obj, data in pairs(BonBonMarks) do
+        if not CurrentTargets[obj] then
+            if data.highlight then data.highlight:Destroy() end
+            if data.text then data.text:Remove() end
+            BonBonMarks[obj] = nil
+        end
+    end
+end
+
+-- Update Bon Bon Text Positions
+RunService.RenderStepped:Connect(function()
+    if not BonBonESPEnabled then return end
+    for obj, data in pairs(BonBonMarks) do
+        if data.text and data.highlight and data.highlight.Parent then
+            local pos
+            if obj:IsA("BasePart") then
+                pos = obj.Position
+            elseif obj:IsA("Model") then
+                local primary = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                if primary then pos = primary.Position end
+            end
+            
+            if pos then
+                local screenPos, onScreen = Camera:WorldToViewportPoint(pos)
+                if onScreen then
+                    data.text.Position = Vector2.new(screenPos.X, screenPos.Y - 30)
+                    data.text.Visible = true
+                else
+                    data.text.Visible = false
+                end
+            else
+                data.text.Visible = false
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if BonBonESPEnabled then pcall(updateBonBonESP) end
+        task.wait(0.5)
+    end
+end)
+
+-- ============================================================
+-- LOGIC: AMMO BAG ESP
 -- ============================================================
 local AmmoMarks = {}
 
@@ -246,12 +399,10 @@ local function updateAmmoESP()
     if not AmmoBagESPEnabled then return end
     local CurrentTargets = {}
 
-    -- Scan workspace for anything named Ammo or Bag
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("BasePart") or obj:IsA("Model") then
             local name = obj.Name:lower()
             if string.find(name, "ammo") or string.find(name, "bag") or string.find(name, "resupply") then
-                -- Ignore parts inside players or dogs
                 local parentModel = obj:FindFirstAncestorOfClass("Model")
                 if not (parentModel and parentModel:FindFirstChildOfClass("Humanoid")) then
                     CurrentTargets[obj] = true
@@ -260,7 +411,7 @@ local function updateAmmoESP()
                     if not data or not data.highlight or not data.highlight.Parent then
                         local highlight = Instance.new("Highlight")
                         highlight.Name = "AmmoMark"
-                        highlight.FillColor = Color3.fromRGB(255, 170, 0) -- Orange
+                        highlight.FillColor = Color3.fromRGB(255, 170, 0)
                         highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
                         highlight.FillTransparency = 0.3
                         highlight.OutlineTransparency = 0
@@ -275,7 +426,7 @@ local function updateAmmoESP()
                         text.Center = true
                         text.Outline = true
                         text.OutlineColor = Color3.fromRGB(0, 0, 0)
-                        text.Font = 2 -- Arial / SourceSans (Montserrat isn't natively supported)
+                        text.Font = 2
                         text.Visible = false
                         
                         AmmoMarks[obj] = { highlight = highlight, text = text }
@@ -285,7 +436,6 @@ local function updateAmmoESP()
         end
     end
 
-    -- Cleanup
     for obj, data in pairs(AmmoMarks) do
         if not CurrentTargets[obj] then
             if data.highlight then data.highlight:Destroy() end
@@ -295,14 +445,6 @@ local function updateAmmoESP()
     end
 end
 
-task.spawn(function()
-    while true do
-        if AmmoBagESPEnabled then pcall(updateAmmoESP) end
-        task.wait(0.5)
-    end
-end)
-
--- Update Ammo Bag Text Positions on Screen
 RunService.RenderStepped:Connect(function()
     if not AmmoBagESPEnabled then return end
     for obj, data in pairs(AmmoMarks) do
@@ -327,6 +469,13 @@ RunService.RenderStepped:Connect(function()
                 data.text.Visible = false
             end
         end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if AmmoBagESPEnabled then pcall(updateAmmoESP) end
+        task.wait(0.5)
     end
 end)
 
@@ -411,7 +560,7 @@ RunService.RenderStepped:Connect(function()
 
     local targetPart = getClosestTarget()
     if targetPart then
-        local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+        local screenPos, onScreen = Camera.WorldToViewportPoint(targetPart.Position)
         if onScreen then
             local center = Camera.ViewportSize / 2
             local deltaX = screenPos.X - center.X
