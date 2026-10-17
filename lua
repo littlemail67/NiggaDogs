@@ -35,7 +35,7 @@ local Window = Rayfield:CreateWindow({
     sidebarLayout = true, 
 })
 
--- 1. AIM TAB (Your original, untouched)
+-- 1. AIM TAB
 local AimTab = Window:CreateTab({
     name = "Aim",
     icon = "crosshair",
@@ -59,7 +59,7 @@ AimTab:CreateToggle({
     end,
 })
 
--- 2. COMBAT TAB (From source)
+-- 2. COMBAT TAB
 local CombatTab = Window:CreateTab({
     name = "Combat",
     icon = "crosshair",
@@ -74,7 +74,7 @@ CombatTab:CreateToggle({
     end,
 })
 
--- 3. PLAYER TAB (From source)
+-- 3. PLAYER TAB
 local PlayerTab = Window:CreateTab({
     name = "Player",
     icon = "user",
@@ -125,7 +125,7 @@ PlayerTab:CreateToggle({
     end,
 })
 
--- 4. VISUALS TAB (From source)
+-- 4. VISUALS TAB
 local VisualsTab = Window:CreateTab({
     name = "Visuals",
     icon = "eye",
@@ -372,9 +372,3 @@ task.spawn(function()
         task.wait(0.4)
     end
 end)
-
-Rayfield:Notify({
-    Title = "Dogs Cheat",
-    Content = "Features loaded successfully.",
-    Duration = 4,
-})
